@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Max's Speed Reader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --fg: #1b1c1f; --muted: #6a6d74; --line: #e2e0da;
+    --accent: #2f4fb8; --accent-soft: #e8ecfa; --on-accent: #ffffff; --focal: #d3212d;
+    --hit: #e0a100; --ok: #1f9d55; --warn: #d98a00; --bad: #d3212d;
+    --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.04);
+    /* The interface uses the system font; Atkinson Hyperlegible is the
+       default for the word itself. Its slashed zero reads like a 6 in small
+       numbers ("0% read"), which is why it isn't used everywhere. */
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Helvetica, Arial, sans-serif;
+    --word-font: "Atkinson Hyperlegible", sans-serif; --focal-use: var(--focal); --word-scale: 1;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #131417; --panel: #1b1d21; --fg: #eceef2; --muted: #9398a3; --line: #2b2e35;
+      --accent: #8aa4ff; --accent-soft: #232a45; --on-accent: #10131c; --focal: #ff4d57; --hit: #f2c14e;
+      --ok: #56c48d; --warn: #f2c14e; --bad: #ff6b6b; --shadow: none; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #131417; --panel: #1b1d21; --fg: #eceef2; --muted: #9398a3; --line: #2b2e35;
+    --accent: #8aa4ff; --accent-soft: #232a45; --on-accent: #10131c; --focal: #ff4d57; --hit: #f2c14e;
+    --ok: #56c48d; --warn: #f2c14e; --bad: #ff6b6b; --shadow: none; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 var(--font);
+         -webkit-font-smoothing: antialiased; }
+  button, input, textarea { font: inherit; color: inherit; }
+  [hidden] { display: none !important; }
+
+  /* ---- top bar ---- */
+  .topbar { position: relative; display: flex; align-items: center; gap: .75rem; padding: .7rem 1.25rem;
+            border-bottom: 1px solid var(--line); background: var(--panel); }
+  .brand { font-weight: 700; white-space: nowrap; }
+  .brand b { color: var(--focal); }
+  .doc-title { flex: 1; min-width: 0; color: var(--muted); white-space: nowrap; overflow: hidden;
+               text-overflow: ellipsis; font-size: .95rem; }
+  .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 9px;
+         padding: .45rem .9rem; cursor: pointer; white-space: nowrap; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .btn.ghost { border-color: transparent; background: none; color: var(--muted); }
+  .btn.ghost:hover { color: var(--fg); border-color: var(--line); }
+  .btn:disabled { opacity: .55; cursor: default; }
+  .account { display: flex; align-items: center; gap: .45rem; max-width: 16rem; }
+  .account span { overflow: hidden; text-overflow: ellipsis; }
+  .account::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .account[data-status="synced"]::before { background: var(--ok); }
+  .account[data-status="syncing"]::before { background: var(--warn); }
+  .account[data-status="error"]::before { background: var(--bad); }
+  .popover { position: absolute; right: 1.25rem; top: calc(100% + 6px); z-index: 40; width: min(22rem, calc(100vw - 32px));
+             background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 1rem;
+             box-shadow: 0 8px 30px rgba(0,0,0,.15); font-size: .92rem; }
+  .popover p { margin: 0 0 .6rem; color: var(--muted); }
+  .popover form { display: flex; gap: .5rem; flex-wrap: wrap; }
+  .popover input { flex: 1 1 10rem; min-width: 0; padding: .45rem .65rem; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); }
+  .popover .err { color: var(--bad); margin: .5rem 0 0; }
+  .google { width: 100%; display: flex; align-items: center; justify-content: center; gap: .6rem; font-weight: 600; padding: .55rem .9rem; }
+  .google svg { width: 18px; height: 18px; }
+  .or { text-align: center; font-size: .85rem; margin: .8rem 0 .6rem !important; }
+  .popover .row-end { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-top: .6rem; }
+  .linkish { border: 0; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; padding: 0; }
+
+  main { max-width: 860px; margin: 0 auto; padding: 1.5rem 16px 3rem; }
+
+  /* ---- start screen ---- */
+  .drop { border: 2px dashed var(--line); border-radius: 18px; padding: 3rem 1.5rem; text-align: center;
+          background: var(--panel); margin-top: 1.5rem; }
+  .drop h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
+  .drop p { margin: .4rem auto; max-width: 36rem; color: var(--muted); }
+  .drop .formats { font-size: .9rem; margin-top: 1.2rem; }
+  .paste { margin-top: 1.25rem; }
+  .paste summary { cursor: pointer; color: var(--muted); }
+  .paste textarea { width: 100%; min-height: 10rem; margin: .75rem 0; padding: .75rem; border-radius: 10px;
+                    border: 1px solid var(--line); background: var(--panel); resize: vertical; }
+  body.dragging .drop, body.dragging .stage { border-color: var(--accent); background: var(--accent-soft); }
+  .library h2 { font-size: 1rem; margin: 2rem 0 .6rem; }
+  .lib-title { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lib-meta { display: block; color: var(--muted); font-size: .85rem; }
+  .lib-bar { display: block; height: 3px; border-radius: 3px; margin-top: .45rem;
+             background: linear-gradient(to right, var(--accent) var(--p), var(--line) var(--p)); }
+
+  /* ---- the word ---- */
+  .section { text-align: center; color: var(--muted); font-size: .88rem; margin: -.4rem 0 .5rem;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stage { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+           box-shadow: var(--shadow); height: calc(9rem * var(--word-scale) + 3rem); display: flex;
+           align-items: center; overflow: hidden; cursor: pointer; user-select: none; }
+  /* Guide lines with a notch above and below the focal letter, so the eye
+     has a fixed spot to rest on. */
+  .stage::before, .stage::after { content: ""; position: absolute; left: 12%; right: 12%; height: 0;
+           border-top: 1px solid var(--line); }
+  .stage::before { top: 22%; }
+  .stage::after { bottom: 22%; }
+  .notch { position: absolute; left: 50%; width: 2px; height: .8rem; background: var(--focal-use);
+           transform: translateX(-50%); opacity: .55; }
+  .notch.top { top: 22%; }
+  .notch.bot { bottom: 22%; }
+  body.noguides .stage::before, body.noguides .stage::after, body.noguides .notch { display: none; }
+  .word { width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: baseline;
+          font-family: var(--word-font); font-size: calc(3.2rem * var(--word-scale)); line-height: 1;
+          white-space: pre; letter-spacing: .01em; }
+  .word .pre { justify-self: end; }
+  .word .piv { color: var(--focal-use); font-weight: 700; }
+  .word .post { justify-self: start; }
+
+  .hint { text-align: center; color: var(--muted); font-size: .9rem; min-height: 1.5em; margin: .6rem 0 1rem; }
+  .note { background: var(--accent-soft); border-radius: 10px; padding: .55rem .8rem; font-size: .88rem; margin-bottom: 1rem; }
+
+  /* ---- progress bar ---- */
+  .scrub { position: relative; height: 26px; cursor: pointer; touch-action: none; outline: none; }
+  .scrub .track { position: absolute; left: 0; right: 0; top: 10px; height: 6px; border-radius: 99px; background: var(--line); }
+  .scrub .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 99px; }
+  .scrub .hits { position: absolute; inset: -4px 0; pointer-events: none; }
+  .scrub .hits i { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--hit); transform: translateX(-1px); }
+  .scrub .thumb { position: absolute; top: 5px; width: 16px; height: 16px; border-radius: 50%; background: var(--accent);
+                  border: 3px solid var(--panel); box-shadow: 0 0 0 1px var(--accent); transform: translateX(-50%); }
+  .scrub:focus-visible .thumb { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 1px var(--accent); }
+  .scrub .tip { position: absolute; bottom: 28px; transform: translateX(-50%); background: var(--fg); color: var(--bg);
+                font-size: .78rem; padding: .2rem .5rem; border-radius: 6px; white-space: nowrap; pointer-events: none;
+                max-width: 80vw; overflow: hidden; text-overflow: ellipsis; }
+  .meta { display: flex; justify-content: space-between; gap: 1rem; font-size: .85rem; color: var(--muted);
+          font-variant-numeric: tabular-nums; margin-top: .25rem; flex-wrap: wrap; }
+  .nopages { cursor: help; }
+
+  /* ---- controls ---- */
+  .controls { display: flex; align-items: center; gap: .6rem; margin: 1.1rem 0; flex-wrap: wrap; }
+  .icon { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel);
+          display: grid; place-items: center; cursor: pointer; padding: 0; flex: none; }
+  .icon:hover { border-color: var(--accent); }
+  .icon svg { width: 20px; height: 20px; fill: currentColor; }
+  .icon[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .icon.play { width: 56px; height: 56px; background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .icon.play svg { width: 24px; height: 24px; }
+  .wpm { display: flex; align-items: center; gap: .6rem; margin-left: auto; flex-wrap: wrap; }
+  .wpm label { font-size: .9rem; color: var(--muted); }
+  .wpm input[type=range] { width: 180px; accent-color: var(--accent); }
+  .num { width: 5.2rem; padding: .4rem .5rem; border-radius: 8px; border: 1px solid var(--line); background: var(--panel);
+         font-variant-numeric: tabular-nums; }
+
+  /* ---- search, contents, bookmarks, page ---- */
+  .tools { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+  .search { flex: 1 1 260px; display: flex; gap: .5rem; }
+  .search input { flex: 1; min-width: 0; padding: .5rem .75rem; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); }
+  .pagejump { display: flex; align-items: center; gap: .5rem; }
+  .pagejump label, .pagejump span { color: var(--muted); font-size: .9rem; white-space: nowrap; }
+  .btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+  .panel { margin-top: .75rem; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .panel-head { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border-bottom: 1px solid var(--line);
+                font-size: .9rem; }
+  .panel-head .count { flex: 1; color: var(--muted); }
+  .small { border: 1px solid var(--line); background: var(--panel); border-radius: 7px; padding: .15rem .55rem; cursor: pointer; }
+  .list { list-style: none; margin: 0; padding: 0; max-height: 20rem; overflow-y: auto; }
+  .library .list { max-height: none; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .list li { border-bottom: 1px solid var(--line); }
+  .list li:last-child { border-bottom: 0; }
+  .list li > button:not(.x) { display: flex; gap: .75rem; width: 100%; text-align: left; border: 0;
+        background: none; padding: .55rem .75rem; cursor: pointer; font-size: .92rem; align-items: baseline; }
+  .library .list li > button:not(.x) { display: block; padding: .75rem .9rem; }
+  .list li.row { display: flex; align-items: stretch; }
+  .list li.row > button:not(.x) { flex: 1; min-width: 0; }
+  .list li > button:not(.x):hover, .list li > button.on { background: var(--accent-soft); }
+  .list .x { flex: none; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 .9rem; font-size: 1.2rem; }
+  .list .x:hover { color: var(--bad); background: var(--accent-soft); }
+  .list .more { padding: .6rem .75rem; color: var(--muted); font-size: .88rem; }
+  .list .pg { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 4.5rem; }
+  .list .grow { flex: 1; min-width: 0; }
+  .list mark { background: none; color: inherit; font-weight: 700; box-shadow: inset 0 -.45em 0 color-mix(in srgb, var(--hit) 45%, transparent); }
+
+  /* ---- surrounding text, shown while paused ---- */
+  .context { margin-top: 1.25rem; padding: 1rem 1.25rem; background: var(--panel); border: 1px solid var(--line);
+             border-radius: 14px; line-height: 1.8; color: var(--muted); }
+  .context span { cursor: pointer; border-radius: 4px; }
+  .context span:hover { color: var(--fg); background: var(--accent-soft); }
+  .context span.cur { color: var(--fg); background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent); }
+  .context span.bm { text-decoration: underline 2px var(--hit); text-underline-offset: 4px; }
+  .context .br { display: block; height: .6rem; }
+  .context-label { font-size: .8rem; margin-bottom: .35rem; }
+
+  /* ---- settings ---- */
+  .settings { margin-top: 1.25rem; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  .settings > summary { cursor: pointer; padding: .7rem 1rem; font-weight: 700; list-style: none; display: flex; justify-content: space-between; }
+  .settings > summary::after { content: "Show"; font-weight: 400; color: var(--muted); font-size: .9rem; }
+  .settings[open] > summary::after { content: "Hide"; }
+  .settings > summary::-webkit-details-marker { display: none; }
+  .set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 1rem 1.5rem;
+              padding: .25rem 1rem 1rem; font-size: .9rem; }
+  .set-item > span:first-child { display: block; color: var(--muted); margin-bottom: .35rem; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; max-width: 100%; }
+  .seg button { border: 0; background: none; padding: .35rem .7rem; cursor: pointer; border-right: 1px solid var(--line); white-space: nowrap; }
+  .seg button:last-child { border-right: 0; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+  .swatch { display: inline-block; width: .8rem; height: .8rem; border-radius: 50%; vertical-align: -1px; }
+  .checks { display: flex; flex-direction: column; gap: .45rem; }
+  .checks label { display: flex; gap: .5rem; align-items: flex-start; cursor: pointer; }
+  .checks input { accent-color: var(--accent); width: 1rem; height: 1rem; margin-top: .2rem; flex: none; }
+  .set-item input[type=range] { width: 100%; accent-color: var(--accent); }
+  .set-foot { padding: 0 1rem 1rem; }
+  .ai-set { grid-column: 1 / -1; }
+  .keyrow { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: .4rem; }
+  .keyrow input { flex: 1 1 14rem; min-width: 0; padding: .4rem .6rem; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+  .fine { font-size: .82rem; color: var(--muted); margin: 0 0 .5rem; }
+  .fine a { color: var(--accent); }
+  .keys { margin-top: 1rem; font-size: .82rem; color: var(--muted); line-height: 2; }
+  kbd { font: inherit; font-size: .78rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px;
+        padding: 0 .35rem; background: var(--panel); }
+
+  /* ---- focus mode: just the word, the bar and the buttons ---- */
+  body.focus .topbar, body.focus .tools, body.focus .panel, body.focus .context, body.focus .settings,
+  body.focus .keys, body.focus .note, body.focus .hint { display: none !important; }
+  body.focus main { max-width: 1100px; padding-top: 12vh; }
+  body.focus .stage { height: calc(14rem * var(--word-scale) + 4rem); border-color: transparent; box-shadow: none; background: none; }
+  body.focus .word { font-size: calc(4.6rem * var(--word-scale)); }
+  body.focus .scrub, body.focus .meta, body.focus .controls { opacity: .3; transition: opacity .2s; }
+  body.focus .scrub:hover, body.focus .meta:hover, body.focus .controls:hover, body.focus .controls:focus-within { opacity: 1; }
+
+  .loading { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 80%, transparent); display: grid; place-items: center; z-index: 50; }
+  .loading .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 1.25rem 1.75rem;
+                  display: flex; align-items: center; gap: .9rem; box-shadow: var(--shadow); flex-wrap: wrap; justify-content: center; }
+  .spin { width: 22px; height: 22px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+          animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .toast { position: fixed; left: 50%; bottom: 1.5rem; transform: translateX(-50%); background: var(--fg); color: var(--bg);
+           padding: .6rem 1rem; border-radius: 10px; max-width: min(90vw, 36rem); font-size: .92rem; z-index: 60; }
+
+  @media (max-width: 600px) {
+    .word { font-size: calc(2.2rem * var(--word-scale)); }
+    body.focus .word { font-size: calc(2.8rem * var(--word-scale)); }
+    .stage { height: calc(6.5rem * var(--word-scale) + 3rem); }
+    .wpm { margin-left: 0; width: 100%; }
+    .wpm input[type=range] { flex: 1; }
+    .topbar { padding: .6rem 16px; gap: .5rem; }
+    .account { max-width: 9rem; }
+    #homeBtn:not([hidden]) ~ .brand { display: none; }
+    .popover { right: 16px; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <button class="btn ghost" id="homeBtn" hidden title="Back to your library" aria-label="Back to your library">&larr; Library</button>
+  <span class="brand">Max's Speed Re<b>a</b>der</span>
+  <span class="doc-title" id="docTitle"></span>
+  <button class="btn account" id="accountBtn" hidden><span id="accountLabel">Sign in to sync</span></button>
+  <button class="btn" id="openBtn">Open a file</button>
+  <input type="file" id="fileInput" hidden>
+
+  <div class="popover" id="accountPanel" hidden>
+    <div id="acctOut">
+      <p>Sign in to keep your library, your place in each document, your bookmarks and your settings in step across devices.</p>
+      <div id="acctGoogleWrap">
+        <button class="btn google" id="acctGoogle" type="button">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+          Continue with Google</button>
+      </div>
+      <p class="or" id="acctOr">or get an email link</p>
+      <form id="acctForm">
+        <input type="email" id="acctEmailInput" placeholder="you@example.com" autocomplete="email" required aria-label="Email">
+        <button class="btn primary" id="acctSend">Email me a link</button>
+      </form>
+      <form id="acctCodeForm" hidden>
+        <p>We sent a sign-in email to <b id="acctSentTo"></b>. Click the link in it, or type the code from it here.</p>
+        <input id="acctCode" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code" aria-label="Sign-in code">
+        <button class="btn primary">Sign in</button>
+        <div class="row-end"><button type="button" class="linkish" id="acctRestart">Use a different email</button></div>
+      </form>
+      <p class="err" id="acctError" role="alert"></p>
+    </div>
+    <div id="acctIn" hidden>
+      <p>Signed in as <b id="acctEmail"></b>.</p>
+      <p id="acctStatus"></p>
+      <div class="row-end"><span></span><button class="btn" id="acctSignOut">Sign out</button></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="empty">
+    <div class="drop">
+      <h1>Open a document and read it one word at a time</h1>
+      <p>Drop a file anywhere on this page, or <button class="linkish" id="chooseBtn">choose a file</button>.</p>
+      <p class="formats">PDF, Word (.docx), EPUB, PowerPoint (.pptx), Excel (.xlsx), OpenDocument (.odt, .odp, .ods),
+        RTF, HTML, Markdown, plain text, subtitles (.srt, .vtt), and photos or scans of pages, which are read with text recognition.</p>
+    </div>
+    <details class="paste">
+      <summary>Paste text instead</summary>
+      <textarea id="pasteBox" placeholder="Paste anything here"></textarea>
+      <button class="btn primary" id="pasteGo">Read this text</button>
+    </details>
+    <section class="library" id="library" hidden>
+      <h2>Your library</h2>
+      <ul class="list" id="libraryList"></ul>
+    </section>
+  </section>
+
+  <section id="reader" hidden>
+    <div class="note" id="note" hidden></div>
+    <div class="section" id="section" hidden></div>
+    <div class="stage" id="stage" title="Click to play or pause">
+      <span class="notch top"></span><span class="notch bot"></span>
+      <div class="word" id="word"><span class="pre" id="wPre"></span><span class="piv" id="wPiv"></span><span class="post" id="wPost"></span></div>
+    </div>
+    <div class="hint" id="hint"></div>
+
+    <div class="scrub" id="scrub" role="slider" tabindex="0" aria-label="Position in document">
+      <div class="track"><div class="hits" id="hitMarks"></div><div class="fill" id="fill"></div></div>
+      <div class="thumb" id="thumb"></div>
+      <div class="tip" id="tip" hidden></div>
+    </div>
+    <div class="meta">
+      <span id="pageLabel"></span>
+      <span id="posLabel"></span>
+      <span id="timeLabel"></span>
+    </div>
+
+    <div class="controls">
+      <button class="icon" id="backBtn" title="Back 10 seconds" aria-label="Back 10 seconds">
+        <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/><text x="12" y="15.6" text-anchor="middle" font-size="7" font-weight="700" font-family="system-ui, sans-serif">10</text></svg></button>
+      <button class="icon play" id="playBtn" title="Play or pause (Space)" aria-label="Play">
+        <svg viewBox="0 0 24 24" id="playIcon"><path d="M7 4.5v15L19.5 12z"/></svg></button>
+      <button class="icon" id="fwdBtn" title="Forward 10 seconds" aria-label="Forward 10 seconds">
+        <svg viewBox="0 0 24 24"><path transform="matrix(-1 0 0 1 24 0)" d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/><text x="12" y="15.6" text-anchor="middle" font-size="7" font-weight="700" font-family="system-ui, sans-serif">10</text></svg></button>
+      <button class="icon" id="markBtn" title="Bookmark this word (B)" aria-label="Bookmark this word" aria-pressed="false">
+        <svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4.5L6 21zM8 5v12l4-3 4 3V5z"/></svg></button>
+      <button class="icon" id="prevSecBtn" title="Previous chapter ([)" aria-label="Previous chapter" hidden>
+        <svg viewBox="0 0 24 24"><path d="M18.4 6.4 17 5l-7 7 7 7 1.4-1.4L12.8 12zM12.4 6.4 11 5l-7 7 7 7 1.4-1.4L6.8 12z"/></svg></button>
+      <button class="icon" id="nextSecBtn" title="Next chapter (])" aria-label="Next chapter" hidden>
+        <svg viewBox="0 0 24 24"><path d="M5.6 6.4 7 5l7 7-7 7-1.4-1.4 5.6-5.6zM11.6 6.4 13 5l7 7-7 7-1.4-1.4 5.6-5.6z"/></svg></button>
+      <button class="icon" id="focusBtn" title="Focus mode (F)" aria-label="Focus mode" aria-pressed="false">
+        <svg viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z"/></svg></button>
+      <div class="wpm">
+        <label for="wpmRange">Words per minute</label>
+        <input type="range" id="wpmRange" min="100" max="1000" step="10">
+        <input type="number" class="num" id="wpmNum" min="50" max="2000" step="10" aria-label="Words per minute">
+      </div>
+    </div>
+
+    <div class="tools">
+      <form class="search" id="searchForm">
+        <input type="search" id="searchInput" placeholder="Search for a word or phrase" aria-label="Search">
+        <button class="btn">Search</button>
+      </form>
+      <button class="btn" id="skipBtn" hidden title="Skip the title page, contents and other front matter (S)">Skip to the main text</button>
+      <button class="btn" id="contentsBtn" aria-expanded="false" hidden>Contents</button>
+      <button class="btn" id="aiBtn" title="Use Gemini to find where the real text starts and where each chapter begins">Find chapters (AI)</button>
+      <button class="btn" id="bookmarksBtn" aria-expanded="false">Bookmarks</button>
+      <form class="pagejump" id="pageForm">
+        <label for="pageInput" id="pageWord">Go to page</label>
+        <input type="number" class="num" id="pageInput" min="1">
+        <span id="pageOf"></span>
+        <button class="btn">Go</button>
+      </form>
+    </div>
+    <div class="panel" id="results" hidden>
+      <div class="panel-head">
+        <span class="count" id="resCount"></span>
+        <button class="small" id="resPrev" title="Previous match" aria-label="Previous match">&lsaquo;</button>
+        <button class="small" id="resNext" title="Next match" aria-label="Next match">&rsaquo;</button>
+        <button class="small" id="resClose" title="Close" aria-label="Close results">&times;</button>
+      </div>
+      <ol class="list" id="resList"></ol>
+    </div>
+    <div class="panel" id="contentsPanel" hidden>
+      <div class="panel-head"><span class="count"><span id="contentsNote"></span> <kbd>[</kbd> and <kbd>]</kbd> step through them.
+        <button class="linkish" id="useFileContents" hidden>Use the file's own contents instead</button></span>
+        <button class="small" id="contentsClose" aria-label="Close contents">&times;</button></div>
+      <ol class="list" id="contentsList"></ol>
+    </div>
+    <div class="panel" id="bookmarksPanel" hidden>
+      <div class="panel-head"><span class="count">Bookmarks</span>
+        <button class="small" id="bookmarksClose" aria-label="Close bookmarks">&times;</button></div>
+      <ol class="list" id="bookmarksList"></ol>
+    </div>
+
+    <div class="context" id="context" hidden>
+      <div class="context-label">Click any word to start from there.</div>
+      <div id="contextText"></div>
+    </div>
+
+    <details class="settings" id="settingsPanel">
+      <summary>Settings</summary>
+      <div class="set-grid">
+        <div class="set-item"><span>Words at a time</span>
+          <div class="seg" data-setting="chunk"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button></div></div>
+        <div class="set-item"><span>Font</span>
+          <div class="seg" data-setting="font"><button data-v="atkinson">Atkinson</button><button data-v="lexend">Lexend</button><button data-v="literata">Serif</button><button data-v="mono">Mono</button></div></div>
+        <div class="set-item"><span>Focus letter colour</span>
+          <div class="seg" data-setting="focal">
+            <button data-v="red" aria-label="Red"><span class="swatch" style="background:var(--focal)"></span></button>
+            <button data-v="orange" aria-label="Orange"><span class="swatch" style="background:#e8730c"></span></button>
+            <button data-v="blue" aria-label="Blue"><span class="swatch" style="background:#3b6fe0"></span></button>
+            <button data-v="green" aria-label="Green"><span class="swatch" style="background:#1f9d55"></span></button>
+            <button data-v="none">None</button></div></div>
+        <div class="set-item"><span>Theme</span>
+          <div class="seg" data-setting="theme"><button data-v="auto">Match system</button><button data-v="light">Light</button><button data-v="dark">Dark</button></div></div>
+        <label class="set-item"><span>Text size</span>
+          <input type="range" id="sizeRange" min="0.6" max="1.8" step="0.05"></label>
+        <div class="set-item checks">
+          <label><input type="checkbox" data-setting="pauses"> Pause longer at commas, sentence ends and long words</label>
+          <label><input type="checkbox" data-setting="easeIn"> Start a little slower each time you press play</label>
+          <label><input type="checkbox" data-setting="resumeSentence"> After pausing, start again from the beginning of the sentence</label>
+          <label><input type="checkbox" data-setting="guides"> Show guide lines around the word</label>
+          <label><input type="checkbox" data-setting="context"> Show the surrounding text while paused</label>
+        </div>
+        <div class="set-item ai-set"><span>Finding chapters with AI (Gemini)</span>
+          <form id="aiKeyForm" class="keyrow">
+            <input type="password" id="aiKey" autocomplete="off" spellcheck="false" aria-label="Gemini API key">
+            <button class="btn">Save key</button>
+            <button class="btn ghost" type="button" id="aiKeyRemove" hidden>Remove</button>
+          </form>
+          <p class="fine">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.
+            It stays in this browser. When chapters are found, the document's text is sent to Google's Gemini API.</p>
+          <div class="checks">
+            <label><input type="checkbox" data-setting="aiAuto"> Find chapters automatically for files that don't list their own</label>
+            <label><input type="checkbox" data-setting="skipFront"> Skip the title page and other front matter when a document opens at its start</label>
+          </div>
+        </div>
+      </div>
+      <div class="set-foot"><button class="btn ghost" id="resetSettings">Reset settings (keeps your speed)</button></div>
+    </details>
+    <p class="keys"><kbd>Space</kbd> play or pause &nbsp; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> one sentence &nbsp;
+      <kbd>Shift</kbd>+<kbd>&larr;</kbd> <kbd>&rarr;</kbd> one word &nbsp; <kbd>&uarr;</kbd> <kbd>&darr;</kbd> speed &nbsp;
+      <kbd>[</kbd> <kbd>]</kbd> section &nbsp; <kbd>Page Up</kbd> <kbd>Page Down</kbd> page &nbsp;
+      <kbd>S</kbd> skip to the main text &nbsp; <kbd>B</kbd> bookmark &nbsp; <kbd>F</kbd> focus mode &nbsp; <kbd>/</kbd> search &nbsp; <kbd>Home</kbd> back to the start</p>
+  </section>
+</main>
+
+<div class="loading" id="loading" hidden><div class="box"><div class="spin"></div><span id="loadingText">Opening</span>
+  <button class="btn" id="cancelLoad">Cancel</button></div></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="config.js"></script>
+<script src="sync.js"></script>
+<script src="extract.js"></script>
+<script src="ai.js"></script>
+<script src="reader.js"></script>
+</body>
+</html>
