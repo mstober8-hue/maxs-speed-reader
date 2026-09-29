@@ -5,8 +5,15 @@ red and fixed at the centre of the screen, so your eyes stay still.
 
 ## Opening it
 
-Double-click `index.html`. It works straight from disk, with no server and no
-install.
+Online: **https://mstober8-hue.github.io/maxs-speed-reader/**, hosted free on
+GitHub Pages from the public repository
+[mstober8-hue/maxs-speed-reader](https://github.com/mstober8-hue/maxs-speed-reader).
+Pushing to `main` updates the site within a couple of minutes. The only key in
+the repository is Supabase's publishable key, which is meant to be public; a
+Gemini key lives only in the browser it was typed into.
+
+On this Mac: double-click `index.html`. It works straight from disk, with no
+server and no install.
 
 To sign in with Google (see sync below), it has to be opened from a web
 address instead: double-click `start.command`, which serves this folder at
